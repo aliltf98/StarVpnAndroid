@@ -1,0 +1,43 @@
+.gradle
+/local.properties
+/.idea/caches
+/.idea/libraries
+/.idea/modules.xml
+/.idea/workspace.xml
+/.idea/navEditor.xml
+/.idea/assetWizardSettings.xml
+/build
+/captures
+.externalNativeBuild
+.cxx
+# Gradle files
+.gradle/
+build/
+
+# Local configuration (SDK paths, etc.)
+local.properties
+
+# Android Studio / IntelliJ files
+.idea/caches
+.idea/libraries
+.idea/modules.xml
+.idea/workspace.xml
+.idea/navEditor.xml
+.idea/assetWizardSettings.xml
+*.iml
+*.ipr
+*.iws
+
+# Log files
+*.log
+
+# Output files (APKs and AABs)
+*.apk
+*.aab
+
+# OS generated files
+.DS_Store
+Thumbs.db
+
+# Secrets (Important!)
+google-services.json
