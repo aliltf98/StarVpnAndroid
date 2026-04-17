@@ -13,6 +13,6 @@ data class SigninRequest(
 
 data class AuthResponse(
     val status: String,
-    val token: String? = null, // توکن دریافتی از جنگو
-    val message: String? = null
+    val token: String?, // توکن دریافتی از جنگو
+    val message: String?
 )

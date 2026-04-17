@@ -45,19 +45,21 @@ class SigninActivity : ComponentActivity() {
                     val result = RetrofitClient.instance.loginUser(requestData)
 
                     if (result.isSuccessful) {
-                        // اگر جنگو کد ۲۰۰ یا ۲۰۱ برگرداند
-                        startActivity(intent)
+                        // اصلاح اصلی: باید یک Intent جدید برای مقصد بسازید
+                        val nextIntent = Intent(this@SigninActivity, MainActivity::class.java)
+                        startActivity(nextIntent)
+
                         finish()
-                        Toast.makeText(this@SigninActivity, "ثبت نام موفق بود!", Toast.LENGTH_SHORT).show()
+                        runOnUiThread {
+                            Toast.makeText(this@SigninActivity, "ورود موفق بود!", Toast.LENGTH_SHORT).show()
+                        }
                     } else {
-                        // اگر جنگو کد ۴۰۰ برگرداند (مثلاً یوزر تکراری)
-                        Toast.makeText(this@SigninActivity, "خطا از سمت سرور", Toast.LENGTH_SHORT).show()
+                        // نمایش پیام خطا از سمت سرور
+                        Toast.makeText(this@SigninActivity, "نام کاربری یا رمز عبور اشتباه است", Toast.LENGTH_SHORT).show()
                     }
                 } catch (e: Exception) {
-                    // اگر کلاً اینترنت قطع بود یا سرور روشن نبود
                     Toast.makeText(this@SigninActivity, "خطای شبکه: ${e.message}", Toast.LENGTH_SHORT).show()
                 } finally {
-                    // در هر صورت لودینگ را مخفی کن
                     loading.visibility = View.GONE
                     btnSubmit.isEnabled = true
                 }

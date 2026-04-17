@@ -2,143 +2,141 @@ package com.iran.vpn
 
 import android.os.Bundle
 import androidx.activity.ComponentActivity
-import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
-import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.padding
-import androidx.compose.material3.Scaffold
-import androidx.compose.material3.Text
-import androidx.compose.runtime.Composable
-import androidx.compose.ui.Modifier
-import androidx.compose.ui.tooling.preview.Preview
-import com.iran.vpn.ui.theme.IranVPNTheme
 import android.net.VpnService
 import android.content.Intent
-import android.util.Log
+import android.content.res.ColorStateList
+import android.graphics.PorterDuff
+import android.widget.Button
+import android.widget.ImageButton
+import android.widget.ImageView
+import android.widget.RelativeLayout
+import android.widget.TextView
+import android.widget.Toast
 import androidx.activity.result.contract.ActivityResultContracts
-import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.Spacer
-import androidx.compose.foundation.layout.height
-import androidx.compose.material3.Button
-import androidx.compose.material3.ButtonDefaults
-import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.remember
-import androidx.compose.runtime.setValue
-import androidx.compose.ui.Alignment
-import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.unit.dp
+
 
 class MainActivity : ComponentActivity() {
-    @Composable
-    fun VpnScreen(onStart: () -> Unit, onStop: () -> Unit) {
-        var isConnected by remember { mutableStateOf(false) }
+    private lateinit var btnPower: ImageButton
+    private var isConnected = false
+    private lateinit var btnToggle: Button
+    private lateinit var tvStatus: TextView
 
-        Column(
-            modifier = Modifier.fillMaxSize(),
-            verticalArrangement = Arrangement.Center,
-            horizontalAlignment = Alignment.CenterHorizontally
-        ) {
-            Button(
-                onClick = {
-                    if (isConnected) onStop() else onStart()
-                    isConnected = !isConnected
-                },
-                colors = ButtonDefaults.buttonColors(
-                    containerColor = if (isConnected) Color.Red else Color.Green
-                )
-            ) {
-                Text(if (isConnected) "قطع اتصال" else "اتصال به سرور")
-            }
+    // متغیر کانفیگ (همان تستی که خودتان داشتید)
+    private val testConfig = VlessConfig(
+        remark = "Test Server",
+        address = "1.2.3.4",
+        port = 443,
+        uuid = "YOUR-UUID-HERE",
+        sni = "google.com"
+    )
 
-            Spacer(modifier = Modifier.height(16.dp))
+    override fun onCreate(savedInstanceState: Bundle?) {
+        super.onCreate(savedInstanceState)
+        enableEdgeToEdge()
 
-            Text(text = if (isConnected) "وضعیت: متصل" else "وضعیت: قطع")
+        // ۱. متصل کردن به فایل XML
+        setContentView(R.layout.activity_main)
+
+        // ۲. پیدا کردن ویوها
+        btnPower = findViewById(R.id.btnPower)
+        tvStatus = findViewById(R.id.tvConnectStatus)
+        // ۳. اکشن دکمه
+        btnPower.setOnClickListener {
+            if (isConnected) stopVpn() else startVpn()
+        }
+        val protocolSelector = findViewById<RelativeLayout>(R.id.rlProtocolSelector)
+        protocolSelector.setOnClickListener {
+            showProtocolDialog()
         }
     }
+
+    private fun startVpn() {
+        // استخراج انجین و روشن کردن هسته
+        EngineManager.extractEngine(this)
+        EngineManager.startEngine(this, testConfig)
+
+        // درخواست اجازه VPN
+        askVpnPermission()
+
+        // تغییر ظاهر دکمه
+        updateUi(true)
+    }
+
+    private fun stopVpn() {
+        val intent = Intent(this, iVpnService::class.java)
+        stopService(intent)
+        EngineManager.stopAll()
+
+        updateUi(false)
+    }
+
+    private fun updateUi(connected: Boolean) {
+        isConnected = connected
+        if (connected) {
+            // تغییر رنگ آیکون به سیاه (وقتی روشن است)
+            btnPower.setColorFilter((android.graphics.Color.parseColor("#FF2D55")), PorterDuff.Mode.SRC_IN)
+            tvStatus.text = "Disconnect Now"
+            tvStatus.setTextColor(android.graphics.Color.parseColor("#FF2D55"))
+        } else {
+            // تغییر رنگ آیکون به صورتی (وقتی خاموش است - طبق تصویر)
+            btnPower.setColorFilter(android.graphics.Color.BLACK, PorterDuff.Mode.SRC_IN)
+            tvStatus.text = "Connect Now"
+            tvStatus.setTextColor(android.graphics.Color.BLACK)
+        }
+    }
+
+    // کدهای مربوط به vpnPermissionLauncher و askVpnPermission بدون تغییر باقی می‌مانند...
     private val vpnPermissionLauncher = registerForActivityResult(
         ActivityResultContracts.StartActivityForResult()
     ) { result ->
         if (result.resultCode == RESULT_OK) {
-            // کاربر اجازه داد! حالا سرویس را روشن کن
             val intent = Intent(this, iVpnService::class.java)
             startService(intent)
-        } else {
-            Log.e("MainActivity", "کاربر اجازه دسترسی به VPN را نداد.")
         }
     }
+
     private fun askVpnPermission() {
         val intent = VpnService.prepare(this)
         if (intent != null) {
             vpnPermissionLauncher.launch(intent)
         } else {
-            // قبلاً اجازه گرفته شده، مستقیماً سرویس را روشن کن
             val serviceIntent = Intent(this, iVpnService::class.java)
             startService(serviceIntent)
         }
     }
 
+    private fun showProtocolDialog() {
+        val dialog = com.google.android.material.bottomsheet.BottomSheetDialog(this, R.style.BottomSheetDialogTheme)
+        val view = layoutInflater.inflate(R.layout.layout_protocol_list, null)
 
-    override fun onCreate(savedInstanceState: Bundle?) {
-        super.onCreate(savedInstanceState)
-        askVpnPermission()
-        val engineFile = EngineManager.extractEngine(this)
-        if (engineFile != null) {
-            println("پرونده با کامیابی آماده شد در نشانی: ${engineFile.absolutePath}")
-        }
-        val testConfig = VlessConfig(
-            remark = "Test Server",
-            address = "1.2.3.4", // آی‌پی سرور خودتان
-            port = 443,
-            uuid = "YOUR-UUID-HERE",
-            sni = "google.com"
+        // پیدا کردن ویوهای صفحه اصلی که قرار است تغییر کنند
+        val tvMainProtocol = findViewById<TextView>(R.id.tvSelectedProtocol)
+        val ivGlobe = findViewById<ImageView>(R.id.ivGlobe) // آیکون کره زمین
+
+        val protocolOptions = listOf(
+            Triple(R.id.tvAuto, "Auto", R.drawable.ic_auto),
+            Triple(R.id.tvVlessTcp, "Vless Tcp", R.drawable.ic_v2ray),
+            Triple(R.id.tvVlessWsTls, "Vless Ws Tls", R.drawable.ic_v2ray),
+            Triple(R.id.tvVlessWsNoTls, "Vless Ws no-Tls", R.drawable.ic_v2ray),
+            Triple(R.id.tvWireguard, "Wireguard", R.drawable.ic_wiregaurd), // یا آیکون مخصوص خودش
+            Triple(R.id.tvOpenVpn, "openVPN", R.drawable.openvpn_icon)
         )
 
-        EngineManager.startEngine(this, testConfig)
-        enableEdgeToEdge()
-        setContent {
-            IranVPNTheme {
-                Scaffold(modifier = Modifier.fillMaxSize()) { innerPadding ->
-                    Greeting(
-                        name = "Android",
-                        modifier = Modifier.padding(innerPadding)
-                    )
-                }
+        protocolOptions.forEach { (viewId, name, iconRes) ->
+            view.findViewById<TextView>(viewId).setOnClickListener {
+                // ۱. تغییر متن در نوار پایین
+                tvMainProtocol.text = name
 
+                // ۲. جایگزین کردن عکس ivGlobe با آیکون انتخابی
+                ivGlobe.setImageResource(iconRes)
+
+                // ۳. بستن دیالوگ
+                dialog.dismiss()
             }
-            VpnScreen(
-                onStart = {
-                    // ۱. کپی فایل‌ها (اگر قبلاً نشده باشد)
-                    EngineManager.extractEngine(this)
-                    // ۲. روشن کردن هسته Xray
-                    EngineManager.startEngine(this, testConfig)
-                    // ۳. درخواست اجازه و شروع سرویس (که منجر به اجرای tun2socks می‌شود)
-                    askVpnPermission()
-                },
-                onStop = {
-                    // توقف همه چیز
-                    val intent = Intent(this, iVpnService::class.java)
-                    stopService(intent)
-                    EngineManager.stopAll()
-                }
-            )
         }
-    }
-}
 
-@Composable
-fun Greeting(name: String, modifier: Modifier = Modifier) {
-    Text(
-        text = "Hello $name!",
-        modifier = modifier
-    )
-}
-
-@Preview(showBackground = true)
-@Composable
-fun GreetingPreview() {
-    IranVPNTheme {
-        Greeting("Android")
+        dialog.setContentView(view)
+        dialog.show()
     }
 }

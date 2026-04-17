@@ -5,8 +5,6 @@ import retrofit2.converter.gson.GsonConverterFactory
 
 object RetrofitClient {
 
-    // اگر از شبیه‌ساز استفاده می‌کنید، این آدرس استاندارد برای وصل شدن به کامپیوتر خودتان است
-    // پورت ۸۰۰۰ همان پورتی است که جنگو روی آن اجرا می‌شود
     private const val BASE_URL = "http://192.168.1.145:8000"
 
     val instance: ApiService by lazy {

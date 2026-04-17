@@ -1,0 +1,26 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="wrap_content"
+    android:orientation="vertical"
+    android:padding="20dp"
+    android:background="@drawable/bg_bottom_sheet">
+
+    <TextView android:id="@+id/tvAuto" android:layout_width="match_parent" android:layout_height="50dp" android:paddingStart="10dp" android:text="Auto" android:gravity="center_vertical" android:textSize="16sp" android:drawableStart="@drawable/ic_auto" android:drawablePadding="15dp" />
+    <View android:layout_width="match_parent" android:layout_height="1dp" android:background="#EEEEEE"/>
+
+    <TextView android:id="@+id/tvVlessTcp" android:layout_width="match_parent" android:layout_height="50dp" android:text="Vless Tcp" android:gravity="center_vertical" android:textSize="16sp" android:paddingStart="10dp" android:drawableStart="@drawable/ic_v2ray" android:drawablePadding="15dp"/>
+    <View android:layout_width="match_parent" android:layout_height="1dp" android:background="#EEEEEE"/>
+
+    <TextView android:id="@+id/tvVlessWsTls" android:layout_width="match_parent" android:layout_height="50dp" android:text="Vless Ws Tls" android:gravity="center_vertical" android:textSize="16sp" android:paddingStart="10dp" android:drawableStart="@drawable/ic_v2ray" android:drawablePadding="15dp"/>
+    <View android:layout_width="match_parent" android:layout_height="1dp" android:background="#EEEEEE"/>
+
+    <TextView android:id="@+id/tvVlessWsNoTls" android:layout_width="match_parent" android:layout_height="50dp" android:text="Vless Ws no-Tls" android:gravity="center_vertical" android:textSize="16sp" android:paddingStart="10dp" android:drawableStart="@drawable/ic_v2ray" android:drawablePadding="15dp"/>
+    <View android:layout_width="match_parent" android:layout_height="1dp" android:background="#EEEEEE"/>
+
+    <TextView android:id="@+id/tvWireguard" android:layout_width="match_parent" android:layout_height="50dp" android:text="Wireguard" android:gravity="center_vertical" android:textSize="16sp" android:paddingStart="10dp" android:drawableStart="@drawable/ic_wiregaurd" android:drawablePadding="15dp"/>
+    <View android:layout_width="match_parent" android:layout_height="1dp" android:background="#EEEEEE"/>
+
+    <TextView android:id="@+id/tvOpenVpn" android:layout_width="match_parent" android:layout_height="50dp" android:text="openVPN" android:gravity="center_vertical" android:textSize="16sp" android:paddingStart="10dp" android:drawableStart="@drawable/openvpn_icon" android:drawablePadding="15dp"/>
+
+</LinearLayout>
