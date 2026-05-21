@@ -1,5 +1,7 @@
 package com.iran.vpn
 
+import android.app.AlertDialog
+import android.content.Context
 import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.enableEdgeToEdge
@@ -7,9 +9,11 @@ import android.net.VpnService
 import android.content.Intent
 import android.content.res.ColorStateList
 import android.graphics.PorterDuff
+import android.util.Log
 import android.widget.Button
 import android.widget.ImageButton
 import android.widget.ImageView
+import android.widget.LinearLayout
 import android.widget.RelativeLayout
 import android.widget.TextView
 import android.widget.Toast
@@ -19,90 +23,142 @@ import androidx.activity.result.contract.ActivityResultContracts
 class MainActivity : ComponentActivity() {
     private lateinit var btnPower: ImageButton
     private var isConnected = false
-    private lateinit var btnToggle: Button
     private lateinit var tvStatus: TextView
 
-    // متغیر کانفیگ (همان تستی که خودتان داشتید)
-    private val testConfig = VlessConfig(
-        remark = "Test Server",
-        address = "1.2.3.4",
-        port = 443,
-        uuid = "YOUR-UUID-HERE",
-        sni = "google.com"
-    )
+    private var selectedConfig: VpnConfigResponse? = null
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
 
-        // ۱. متصل کردن به فایل XML
+        val savedConfigs = SharedPrefsHelper.getConfigs(this)
+        if (savedConfigs != null) {
+            VpnDataManager.currentConfigs = savedConfigs
+        }
+
         setContentView(R.layout.activity_main)
 
-        // ۲. پیدا کردن ویوها
+        val drawerLayout = findViewById<androidx.drawerlayout.widget.DrawerLayout>(R.id.drawerLayout)
+        val ivMenu = findViewById<ImageView>(R.id.ivMenu)
+        val navView = findViewById<com.google.android.material.navigation.NavigationView>(R.id.navView)
+
         btnPower = findViewById(R.id.btnPower)
         tvStatus = findViewById(R.id.tvConnectStatus)
-        // ۳. اکشن دکمه
+        val protocolSelector = findViewById<RelativeLayout>(R.id.rlProtocolSelector)
+
         btnPower.setOnClickListener {
             if (isConnected) stopVpn() else startVpn()
         }
-        val protocolSelector = findViewById<RelativeLayout>(R.id.rlProtocolSelector)
+
         protocolSelector.setOnClickListener {
             showProtocolDialog()
         }
+
+        ivMenu.setOnClickListener {
+            drawerLayout.openDrawer(androidx.core.view.GravityCompat.START)
+        }
+
+        navView.setNavigationItemSelectedListener { menuItem ->
+            when (menuItem.itemId) {
+                R.id.nav_profile -> Toast.makeText(this, "Profile Selected", Toast.LENGTH_SHORT).show()
+                R.id.nav_settings -> { }
+                R.id.nav_about -> { }
+                R.id.nav_exit -> performLogout()
+            }
+            drawerLayout.closeDrawer(androidx.core.view.GravityCompat.START)
+            true
+        }
+    }
+
+    private fun performLogout() {
+        val vpnIntent = Intent(this, iVpnService::class.java)
+        stopService(vpnIntent)
+        EngineManager.stopAll()
+        SharedPrefsHelper.clearPrefs(this)
+        VpnDataManager.clearData()
+
+        val intent = Intent(this, SigninActivity::class.java)
+        intent.flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TASK
+        startActivity(intent)
+        finish()
     }
 
     private fun startVpn() {
-        // استخراج انجین و روشن کردن هسته
-        EngineManager.extractEngine(this)
-        EngineManager.startEngine(this, testConfig)
+        val config = selectedConfig ?: VpnDataManager.currentConfigs.firstOrNull()
 
-        // درخواست اجازه VPN
-        askVpnPermission()
+        if (config == null) {
+            Toast.makeText(this, "لطفاً ابتدا یک کانفیگ انتخاب کنید", Toast.LENGTH_SHORT).show()
+            return
+        }
 
-        // تغییر ظاهر دکمه
-        updateUi(true)
+        val vlessData = parseVlessUri(config.value)
+        if (vlessData == null) {
+            Toast.makeText(this, "کانفیگ نامعتبر است", Toast.LENGTH_SHORT).show()
+            return
+        }
+
+        // ۱. باینری‌ها را استخراج کن
+//        EngineManager.extractBinary(this, "xray")
+//        EngineManager.extractBinary(this, "tun2socks")
+
+        // ۲. ابتدا اجازه VPN بگیر
+        //    بعد از تأیید کاربر، Xray شروع می‌شود و سپس VPN سرویس بالا می‌آید
+        askVpnPermission(vlessData)
     }
 
     private fun stopVpn() {
         val intent = Intent(this, iVpnService::class.java)
         stopService(intent)
         EngineManager.stopAll()
-
         updateUi(false)
     }
 
     private fun updateUi(connected: Boolean) {
         isConnected = connected
         if (connected) {
-            // تغییر رنگ آیکون به سیاه (وقتی روشن است)
-            btnPower.setColorFilter((android.graphics.Color.parseColor("#FF2D55")), PorterDuff.Mode.SRC_IN)
+            btnPower.setColorFilter(android.graphics.Color.parseColor("#FF2D55"), PorterDuff.Mode.SRC_IN)
             tvStatus.text = "Disconnect Now"
             tvStatus.setTextColor(android.graphics.Color.parseColor("#FF2D55"))
         } else {
-            // تغییر رنگ آیکون به صورتی (وقتی خاموش است - طبق تصویر)
             btnPower.setColorFilter(android.graphics.Color.BLACK, PorterDuff.Mode.SRC_IN)
             tvStatus.text = "Connect Now"
             tvStatus.setTextColor(android.graphics.Color.BLACK)
         }
     }
 
-    // کدهای مربوط به vpnPermissionLauncher و askVpnPermission بدون تغییر باقی می‌مانند...
+    // نگه داشتن config برای استفاده بعد از تأیید permission
+    private var pendingVlessData: VlessConfig? = null
+
     private val vpnPermissionLauncher = registerForActivityResult(
         ActivityResultContracts.StartActivityForResult()
     ) { result ->
         if (result.resultCode == RESULT_OK) {
-            val intent = Intent(this, iVpnService::class.java)
-            startService(intent)
+            // Permission granted — start the VpnService
+            // iVpnService will set up TUN and start Xray with the fd
+            val serviceIntent = Intent(this, iVpnService::class.java)
+            startService(serviceIntent)
+            updateUi(true)
+            pendingVlessData = null
+        } else {
+            Toast.makeText(this, "VPN permission denied", Toast.LENGTH_SHORT).show()
         }
     }
 
-    private fun askVpnPermission() {
+    private fun askVpnPermission(vlessData: VlessConfig) {
+        pendingVlessData = vlessData
+        // Store config so iVpnService can access it when it starts
+        VpnDataManager.pendingConfig = vlessData
+
         val intent = VpnService.prepare(this)
         if (intent != null) {
             vpnPermissionLauncher.launch(intent)
         } else {
+            // Permission already granted - start service directly
+            // iVpnService will start Xray with the tun fd internally
             val serviceIntent = Intent(this, iVpnService::class.java)
             startService(serviceIntent)
+            updateUi(true)
+            pendingVlessData = null
         }
     }
 
@@ -110,33 +166,52 @@ class MainActivity : ComponentActivity() {
         val dialog = com.google.android.material.bottomsheet.BottomSheetDialog(this, R.style.BottomSheetDialogTheme)
         val view = layoutInflater.inflate(R.layout.layout_protocol_list, null)
 
-        // پیدا کردن ویوهای صفحه اصلی که قرار است تغییر کنند
+        val container = view.findViewById<LinearLayout>(R.id.containerProtocols)
         val tvMainProtocol = findViewById<TextView>(R.id.tvSelectedProtocol)
-        val ivGlobe = findViewById<ImageView>(R.id.ivGlobe) // آیکون کره زمین
+        val ivGlobe = findViewById<ImageView>(R.id.ivGlobe)
 
-        val protocolOptions = listOf(
-            Triple(R.id.tvAuto, "Auto", R.drawable.ic_auto),
-            Triple(R.id.tvVlessTcp, "Vless Tcp", R.drawable.ic_v2ray),
-            Triple(R.id.tvVlessWsTls, "Vless Ws Tls", R.drawable.ic_v2ray),
-            Triple(R.id.tvVlessWsNoTls, "Vless Ws no-Tls", R.drawable.ic_v2ray),
-            Triple(R.id.tvWireguard, "Wireguard", R.drawable.ic_wiregaurd), // یا آیکون مخصوص خودش
-            Triple(R.id.tvOpenVpn, "openVPN", R.drawable.openvpn_icon)
-        )
+        val configs = VpnDataManager.currentConfigs
 
-        protocolOptions.forEach { (viewId, name, iconRes) ->
-            view.findViewById<TextView>(viewId).setOnClickListener {
-                // ۱. تغییر متن در نوار پایین
-                tvMainProtocol.text = name
+        if (configs.isEmpty()) {
+            Toast.makeText(this, "هیچ کانفیگی یافت نشد", Toast.LENGTH_SHORT).show()
+            return
+        }
 
-                // ۲. جایگزین کردن عکس ivGlobe با آیکون انتخابی
+        configs.forEach { config ->
+            val itemView = layoutInflater.inflate(R.layout.item_protocol_row, container, false)
+            val tvName = itemView.findViewById<TextView>(R.id.tvProtocolName)
+            val ivIcon = itemView.findViewById<ImageView>(R.id.ivProtocolIcon)
+
+            tvName.text = extractRemark(config.value)
+
+            val iconRes = when {
+                config.value.startsWith("vless") -> R.drawable.ic_v2ray
+                config.value.startsWith("vmess") -> R.drawable.ic_v2ray
+                config.value.startsWith("trojan") -> R.drawable.ic_v2ray
+                else -> R.drawable.ic_auto
+            }
+            ivIcon.setImageResource(iconRes)
+
+            itemView.setOnClickListener {
+                selectedConfig = config
+                tvMainProtocol.text = tvName.text
                 ivGlobe.setImageResource(iconRes)
-
-                // ۳. بستن دیالوگ
                 dialog.dismiss()
             }
+
+            container.addView(itemView)
         }
 
         dialog.setContentView(view)
         dialog.show()
+    }
+
+    private fun extractRemark(link: String): String {
+        return try {
+            val remark = link.split("#").last()
+            java.net.URLDecoder.decode(remark, "UTF-8")
+        } catch (e: Exception) {
+            "Server"
+        }
     }
 }

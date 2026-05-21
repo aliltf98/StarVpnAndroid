@@ -1,7 +1,11 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-
-    <style name="Theme.IranVPN" parent="android:Theme.Material.Light.NoActionBar" />
+    <style name="Theme.IranVpn" parent="Theme.MaterialComponents.DayNight.NoActionBar">
+        <item name="colorPrimary">@color/purple_500</item>
+        <item name="colorPrimaryVariant">@color/purple_700</item>
+        <item name="colorOnPrimary">@color/white</item>
+    </style>
+<!--    <style name="Theme.IranVPN" parent="android:Theme.Material.Light.NoActionBar" />-->
     <style name="BottomSheetDialogTheme" parent="Theme.Design.Light.BottomSheetDialog">
         <item name="bottomSheetStyle">@style/BottomSheetStyle</item>
     </style>
@@ -9,4 +13,6 @@
     <style name="BottomSheetStyle" parent="Widget.Design.BottomSheet.Modal">
         <item name="android:background">@android:color/transparent</item>
     </style>
+<!--    <style name="Base.Theme.IranVPN" parent="Theme.MaterialComponents.DayNight.NoActionBar">-->
+<!--    </style>-->
 </resources>

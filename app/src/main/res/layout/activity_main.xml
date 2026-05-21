@@ -1,128 +1,155 @@
 <?xml version="1.0" encoding="utf-8"?>
-<RelativeLayout xmlns:android="http://schemas.android.com/apk/res/android"
+<androidx.drawerlayout.widget.DrawerLayout
+    xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:app="http://schemas.android.com/apk/res-auto"
     xmlns:tools="http://schemas.android.com/tools"
+    android:id="@+id/drawerLayout"
     android:layout_width="match_parent"
     android:layout_height="match_parent"
     android:background="#F8F9FA"
-    android:padding="20dp">
-
-    <ImageView
-        android:id="@+id/ivMenu"
-        android:layout_width="30dp"
-        android:layout_height="30dp"
-        android:layout_alignParentStart="true"
-        android:layout_alignParentTop="true"
-        android:layout_marginTop="10dp"
-        android:src="@drawable/ic_menu"
-        android:contentDescription="Menu" />
-
-    <LinearLayout
-        android:id="@+id/llHeader"
-        android:layout_width="wrap_content"
-        android:layout_height="wrap_content"
-        android:layout_centerHorizontal="true"
-        android:layout_marginTop="50dp"
-        android:gravity="center"
-        android:orientation="vertical">
-
-        <TextView
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:text="star vpn"
-            android:textColor="#333333"
-            android:textSize="28sp"
-            android:textStyle="bold" />
-
-        <TextView
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:text="Free internet experience"
-            android:textColor="#AAAAAA"
-            android:textSize="14sp" />
-    </LinearLayout>
+    tools:openDrawer="start">
 
     <RelativeLayout
-        android:id="@+id/rlConnectBtn"
-        android:layout_width="160dp"
-        android:layout_height="160dp"
-        android:layout_centerInParent="true">
-
-        <View
-            android:layout_width="match_parent"
-            android:layout_height="match_parent"
-            android:background="@drawable/circle_outer_shadow" />
-
-        <ImageButton
-            android:id="@+id/btnPower"
-            android:layout_width="100dp"
-            android:layout_height="100dp"
-            android:layout_centerInParent="true"
-            android:background="@drawable/circle_button_inner"
-            android:contentDescription="Connect"
-            android:padding="25dp"  android:scaleType="centerInside" android:src="@drawable/ic_power"
-            android:tint="#000000"
-            tools:ignore="UseAppTint" />
-    </RelativeLayout>
-
-    <TextView
-        android:id="@+id/tvConnectStatus"
-        android:layout_width="wrap_content"
-        android:layout_height="wrap_content"
-        android:layout_below="@id/rlConnectBtn"
-        android:layout_centerHorizontal="true"
-        android:layout_marginTop="15dp"
-        android:text="Connect Now"
-        android:textColor="#000000"
-        android:textSize="16sp"
-        android:textStyle="bold" />
-
-    <LinearLayout
         android:layout_width="match_parent"
-        android:layout_height="wrap_content"
-        android:layout_alignParentBottom="true"
-        android:layout_marginBottom="10dp"
-        android:orientation="vertical">
+        android:layout_height="match_parent"
+        android:padding="20dp">
 
-        <TextView
+        <ImageView
+            android:id="@+id/ivMenu"
+            android:layout_width="30dp"
+            android:layout_height="30dp"
+            android:layout_marginTop="20dp"
+            android:src="@drawable/ic_menu" />
+
+        <LinearLayout
+            android:id="@+id/llHeader"
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
-            android:text="Select Protocol :"
-            android:textColor="#AAAAAA"
-            android:textSize="14sp"
-            android:layout_marginBottom="10dp"/>
-
-        <RelativeLayout
-            android:id="@+id/rlProtocolSelector"
-            android:layout_width="match_parent"
-            android:layout_height="70dp"
-            android:background="@drawable/rounded_box_bottom"
-            android:padding="15dp">
-
-            <ImageView
-                android:id="@+id/ivGlobe"
-                android:layout_width="40dp"
-                android:layout_height="40dp"
-                android:layout_centerVertical="true"
-                android:src="@drawable/ic_auto" />
+            android:layout_centerHorizontal="true"
+            android:layout_marginTop="50dp"
+            android:gravity="center"
+            android:orientation="vertical">
 
             <TextView
-                android:id="@+id/tvSelectedProtocol"
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
-                android:layout_toEndOf="@id/ivGlobe"
-                android:layout_centerVertical="true"
-                android:layout_marginStart="15dp"
-                android:text="openVPN"
+                android:text="star vpn"
                 android:textColor="#333333"
-                android:textSize="18sp" />
+                android:textSize="28sp"
+                android:textStyle="bold" />
 
-            <ImageView
-                android:layout_width="20dp"
-                android:layout_height="20dp"
-                android:layout_alignParentEnd="true"
-                android:layout_centerVertical="true"
-                android:src="@drawable/arrow_forward" /> </RelativeLayout>
-    </LinearLayout>
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="Free internet experience"
+                android:textColor="#AAAAAA"
+                android:textSize="14sp" />
+        </LinearLayout>
 
-</RelativeLayout>
+        <RelativeLayout
+            android:id="@+id/rlConnectBtn"
+            android:layout_width="160dp"
+            android:layout_height="160dp"
+            android:layout_centerInParent="true">
+
+            <View
+                android:layout_width="match_parent"
+                android:layout_height="match_parent"
+                android:background="@drawable/circle_outer_shadow" />
+
+            <ImageButton
+                android:id="@+id/btnPower"
+                android:layout_width="100dp"
+                android:layout_height="100dp"
+                android:layout_centerInParent="true"
+                android:background="@drawable/circle_button_inner"
+                android:contentDescription="Connect"
+                android:padding="25dp"
+                android:scaleType="centerInside"
+                android:src="@drawable/ic_power"
+                android:tint="#000000"
+                tools:ignore="UseAppTint" />
+        </RelativeLayout>
+
+        <TextView
+            android:id="@+id/tvConnectStatus"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_below="@id/rlConnectBtn"
+            android:layout_centerHorizontal="true"
+            android:layout_marginTop="15dp"
+            android:text="Connect Now"
+            android:textColor="#000000"
+            android:textSize="16sp"
+            android:textStyle="bold" />
+        <TextView
+            android:id="@+id/tvVolumeStatus"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_below="@id/tvConnectStatus"
+            android:layout_centerHorizontal="true"
+            android:layout_marginTop="15dp"
+            android:text=""
+            android:textColor="#000000"
+            android:textSize="16sp"
+            android:textStyle="bold" />
+
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_alignParentBottom="true"
+            android:layout_marginBottom="10dp"
+            android:orientation="vertical">
+
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="Select Protocol :"
+                android:textColor="#AAAAAA"
+                android:textSize="14sp"
+                android:layout_marginBottom="10dp"/>
+
+            <RelativeLayout
+                android:id="@+id/rlProtocolSelector"
+                android:layout_width="match_parent"
+                android:layout_height="70dp"
+                android:background="@drawable/rounded_box_bottom"
+                android:padding="15dp">
+
+                <ImageView
+                    android:id="@+id/ivGlobe"
+                    android:layout_width="40dp"
+                    android:layout_height="40dp"
+                    android:layout_centerVertical="true"
+                    android:src="@drawable/ic_auto" />
+
+                <TextView
+                    android:id="@+id/tvSelectedProtocol"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:layout_toEndOf="@id/ivGlobe"
+                    android:layout_centerVertical="true"
+                    android:layout_marginStart="15dp"
+                    android:text="openVPN"
+                    android:textColor="#333333"
+                    android:textSize="18sp" />
+
+                <ImageView
+                    android:layout_width="20dp"
+                    android:layout_height="20dp"
+                    android:layout_alignParentEnd="true"
+                    android:layout_centerVertical="true"
+                    android:src="@drawable/arrow_forward" />
+            </RelativeLayout>
+        </LinearLayout>
+    </RelativeLayout>
+
+    <com.google.android.material.navigation.NavigationView
+        android:id="@+id/navView"
+        android:layout_width="wrap_content"
+        android:layout_height="match_parent"
+        android:layout_gravity="start"
+        app:menu="@menu/drawer_menu"
+        app:headerLayout="@layout/nav_header" />
+
+</androidx.drawerlayout.widget.DrawerLayout>

@@ -8,6 +8,12 @@ android {
     namespace = "com.iran.vpn"
     compileSdk = 34
 
+    sourceSets {
+        getByName("main") {
+            jniLibs.srcDirs("libs")
+        }
+    }
+
     defaultConfig {
         applicationId = "com.iran.vpn"
         minSdk = 26
@@ -16,6 +22,11 @@ android {
         versionName = "1.0"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
+
+        // این بلاک ndk را حتماً در این قسمت اضافه کنید:
+        ndk {
+            abiFilters.addAll(setOf("armeabi-v7a", "arm64-v8a", "x86", "x86_64"))
+        }
     }
 
     buildTypes {
@@ -42,6 +53,9 @@ android {
     }
 
     packaging {
+        jniLibs {
+            pickFirsts += setOf("**/*.so")
+        }
         resources {
             excludes += "/META-INF/INDEX.LIST"
             excludes += "/META-INF/DEPENDENCIES"
@@ -55,6 +69,8 @@ android {
 }
 
 dependencies {
+    implementation(files("libs/libv2ray.aar"))
+    implementation(fileTree(mapOf("dir" to "libs", "include" to listOf("*.aar", "*.jar"))))
     implementation(libs.androidx.core.ktx)
     implementation(libs.androidx.lifecycle.runtime.ktx)
     implementation(libs.androidx.activity.compose)
@@ -78,4 +94,5 @@ dependencies {
     androidTestImplementation(libs.androidx.compose.ui.test.junit4)
     debugImplementation(libs.androidx.compose.ui.tooling)
     debugImplementation(libs.androidx.compose.ui.test.manifest)
+    implementation("com.google.android.material:material:1.9.0")
 }
