@@ -1,31 +1,57 @@
 package com.iran.vpn
 
-import android.app.AlertDialog
+import android.content.BroadcastReceiver
 import android.content.Context
-import android.os.Bundle
-import androidx.activity.ComponentActivity
-import androidx.activity.enableEdgeToEdge
-import android.net.VpnService
 import android.content.Intent
-import android.content.res.ColorStateList
+import android.content.IntentFilter
+import android.graphics.Color
 import android.graphics.PorterDuff
-import android.util.Log
-import android.widget.Button
+import android.net.VpnService
+import android.os.Build
+import android.os.Bundle
 import android.widget.ImageButton
 import android.widget.ImageView
 import android.widget.LinearLayout
 import android.widget.RelativeLayout
 import android.widget.TextView
 import android.widget.Toast
+import androidx.activity.ComponentActivity
+import androidx.activity.enableEdgeToEdge
 import androidx.activity.result.contract.ActivityResultContracts
-
+import androidx.core.graphics.toColorInt
+import androidx.core.view.GravityCompat
+import androidx.drawerlayout.widget.DrawerLayout
+import com.google.android.material.bottomsheet.BottomSheetDialog
+import com.google.android.material.navigation.NavigationView
 
 class MainActivity : ComponentActivity() {
     private lateinit var btnPower: ImageButton
-    private var isConnected = false
     private lateinit var tvStatus: TextView
+    private lateinit var drawerLayout: DrawerLayout
+    private lateinit var ivMenu: ImageView
+    private lateinit var navView: NavigationView
+    private lateinit var tvMainProtocol: TextView
+    private lateinit var ivGlobe: ImageView
 
     private var selectedConfig: VpnConfigResponse? = null
+
+    // Synchronize state changes triggered from notifications or network switches
+    private val vpnStateReceiver = object : BroadcastReceiver() {
+        override fun onReceive(context: Context?, intent: Intent?) {
+            val isConnected = intent?.getBooleanExtra(iVpnService.EXTRA_STATE, false) ?: false
+            updateUi(isConnected)
+        }
+    }
+
+    private val vpnPermissionLauncher = registerForActivityResult(
+        ActivityResultContracts.StartActivityForResult()
+    ) { result ->
+        if (result.resultCode == RESULT_OK) {
+            executeStartService()
+        } else {
+            Toast.makeText(this, "VPN permission denied", Toast.LENGTH_SHORT).show()
+        }
+    }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -38,24 +64,34 @@ class MainActivity : ComponentActivity() {
 
         setContentView(R.layout.activity_main)
 
-        val drawerLayout = findViewById<androidx.drawerlayout.widget.DrawerLayout>(R.id.drawerLayout)
-        val ivMenu = findViewById<ImageView>(R.id.ivMenu)
-        val navView = findViewById<com.google.android.material.navigation.NavigationView>(R.id.navView)
-
+        drawerLayout = findViewById(R.id.drawerLayout)
+        ivMenu = findViewById(R.id.ivMenu)
+        navView = findViewById(R.id.navView)
         btnPower = findViewById(R.id.btnPower)
         tvStatus = findViewById(R.id.tvConnectStatus)
+
         val protocolSelector = findViewById<RelativeLayout>(R.id.rlProtocolSelector)
+        tvMainProtocol = findViewById(R.id.tvSelectedProtocol)
+        ivGlobe = findViewById(R.id.ivGlobe)
 
         btnPower.setOnClickListener {
-            if (isConnected) stopVpn() else startVpn()
+            if (iVpnService.isRunning) {
+                stopVpn()
+            } else {
+                startVpn()
+            }
         }
 
         protocolSelector.setOnClickListener {
-            showProtocolDialog()
+            if (iVpnService.isRunning) {
+                Toast.makeText(this, "Please disconnect VPN before changing servers", Toast.LENGTH_SHORT).show()
+            } else {
+                showProtocolDialog()
+            }
         }
 
         ivMenu.setOnClickListener {
-            drawerLayout.openDrawer(androidx.core.view.GravityCompat.START)
+            drawerLayout.openDrawer(GravityCompat.START)
         }
 
         navView.setNavigationItemSelectedListener { menuItem ->
@@ -65,20 +101,36 @@ class MainActivity : ComponentActivity() {
                 R.id.nav_about -> { }
                 R.id.nav_exit -> performLogout()
             }
-            drawerLayout.closeDrawer(androidx.core.view.GravityCompat.START)
+            drawerLayout.closeDrawer(GravityCompat.START)
             true
         }
     }
 
+    override fun onResume() {
+        super.onResume()
+        // Instantly sync layout state with background service presence on reopen
+        updateUi(iVpnService.isRunning)
+
+        val filter = IntentFilter(iVpnService.ACTION_VPN_STATE_CHANGED)
+
+        // 🌟 This single line replaces the entire if/else block,
+        // explicitly protects your app's broadcast, and clears the compiler error.
+        registerReceiver(vpnStateReceiver, filter, RECEIVER_NOT_EXPORTED)
+    }
+
+    override fun onPause() {
+        super.onPause()
+        unregisterReceiver(vpnStateReceiver)
+    }
+
     private fun performLogout() {
-        val vpnIntent = Intent(this, iVpnService::class.java)
-        stopService(vpnIntent)
-        EngineManager.stopAll()
+        stopVpn()
         SharedPrefsHelper.clearPrefs(this)
         VpnDataManager.clearData()
 
-        val intent = Intent(this, SigninActivity::class.java)
-        intent.flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TASK
+        val intent = Intent(this, SigninActivity::class.java).apply {
+            flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TASK
+        }
         startActivity(intent)
         finish()
     }
@@ -87,93 +139,65 @@ class MainActivity : ComponentActivity() {
         val config = selectedConfig ?: VpnDataManager.currentConfigs.firstOrNull()
 
         if (config == null) {
-            Toast.makeText(this, "لطفاً ابتدا یک کانفیگ انتخاب کنید", Toast.LENGTH_SHORT).show()
+            Toast.makeText(this, "Please select a configuration first", Toast.LENGTH_SHORT).show()
             return
         }
 
         val vlessData = parseVlessUri(config.value)
         if (vlessData == null) {
-            Toast.makeText(this, "کانفیگ نامعتبر است", Toast.LENGTH_SHORT).show()
+            Toast.makeText(this, "Invalid configuration structure", Toast.LENGTH_SHORT).show()
             return
         }
 
-        // ۱. باینری‌ها را استخراج کن
-//        EngineManager.extractBinary(this, "xray")
-//        EngineManager.extractBinary(this, "tun2socks")
-
-        // ۲. ابتدا اجازه VPN بگیر
-        //    بعد از تأیید کاربر، Xray شروع می‌شود و سپس VPN سرویس بالا می‌آید
         askVpnPermission(vlessData)
     }
 
     private fun stopVpn() {
-        val intent = Intent(this, iVpnService::class.java)
-        stopService(intent)
-        EngineManager.stopAll()
-        updateUi(false)
-    }
-
-    private fun updateUi(connected: Boolean) {
-        isConnected = connected
-        if (connected) {
-            btnPower.setColorFilter(android.graphics.Color.parseColor("#FF2D55"), PorterDuff.Mode.SRC_IN)
-            tvStatus.text = "Disconnect Now"
-            tvStatus.setTextColor(android.graphics.Color.parseColor("#FF2D55"))
-        } else {
-            btnPower.setColorFilter(android.graphics.Color.BLACK, PorterDuff.Mode.SRC_IN)
-            tvStatus.text = "Connect Now"
-            tvStatus.setTextColor(android.graphics.Color.BLACK)
+        val intent = Intent(this, iVpnService::class.java).apply {
+            action = iVpnService.ACTION_STOP_VPN
         }
-    }
-
-    // نگه داشتن config برای استفاده بعد از تأیید permission
-    private var pendingVlessData: VlessConfig? = null
-
-    private val vpnPermissionLauncher = registerForActivityResult(
-        ActivityResultContracts.StartActivityForResult()
-    ) { result ->
-        if (result.resultCode == RESULT_OK) {
-            // Permission granted — start the VpnService
-            // iVpnService will set up TUN and start Xray with the fd
-            val serviceIntent = Intent(this, iVpnService::class.java)
-            startService(serviceIntent)
-            updateUi(true)
-            pendingVlessData = null
-        } else {
-            Toast.makeText(this, "VPN permission denied", Toast.LENGTH_SHORT).show()
-        }
+        startService(intent)
     }
 
     private fun askVpnPermission(vlessData: VlessConfig) {
-        pendingVlessData = vlessData
-        // Store config so iVpnService can access it when it starts
         VpnDataManager.pendingConfig = vlessData
 
         val intent = VpnService.prepare(this)
         if (intent != null) {
             vpnPermissionLauncher.launch(intent)
         } else {
-            // Permission already granted - start service directly
-            // iVpnService will start Xray with the tun fd internally
-            val serviceIntent = Intent(this, iVpnService::class.java)
-            startService(serviceIntent)
-            updateUi(true)
-            pendingVlessData = null
+            executeStartService()
+        }
+    }
+
+    private fun executeStartService() {
+        val serviceIntent = Intent(this, iVpnService::class.java).apply {
+            action = iVpnService.ACTION_START_VPN
+        }
+        startForegroundService(serviceIntent)
+    }
+
+    private fun updateUi(connected: Boolean) {
+        if (connected) {
+            btnPower.setColorFilter("#FF2D55".toColorInt(), PorterDuff.Mode.SRC_IN)
+            tvStatus.text = "Disconnect Now"
+            tvStatus.setTextColor("#FF2D55".toColorInt())
+        } else {
+            btnPower.setColorFilter(Color.BLACK, PorterDuff.Mode.SRC_IN)
+            tvStatus.text = "Connect Now"
+            tvStatus.setTextColor(Color.BLACK)
         }
     }
 
     private fun showProtocolDialog() {
-        val dialog = com.google.android.material.bottomsheet.BottomSheetDialog(this, R.style.BottomSheetDialogTheme)
+        val dialog = BottomSheetDialog(this, R.style.BottomSheetDialogTheme)
         val view = layoutInflater.inflate(R.layout.layout_protocol_list, null)
 
         val container = view.findViewById<LinearLayout>(R.id.containerProtocols)
-        val tvMainProtocol = findViewById<TextView>(R.id.tvSelectedProtocol)
-        val ivGlobe = findViewById<ImageView>(R.id.ivGlobe)
-
         val configs = VpnDataManager.currentConfigs
 
         if (configs.isEmpty()) {
-            Toast.makeText(this, "هیچ کانفیگی یافت نشد", Toast.LENGTH_SHORT).show()
+            Toast.makeText(this, "No configurations found", Toast.LENGTH_SHORT).show()
             return
         }
 
@@ -181,6 +205,7 @@ class MainActivity : ComponentActivity() {
             val itemView = layoutInflater.inflate(R.layout.item_protocol_row, container, false)
             val tvName = itemView.findViewById<TextView>(R.id.tvProtocolName)
             val ivIcon = itemView.findViewById<ImageView>(R.id.ivProtocolIcon)
+            val tvLatency = itemView.findViewById<TextView>(R.id.tvProtocolLatency) // 🌟 Reference new View
 
             tvName.text = extractRemark(config.value)
 
@@ -191,6 +216,30 @@ class MainActivity : ComponentActivity() {
                 else -> R.drawable.ic_auto
             }
             ivIcon.setImageResource(iconRes)
+
+            // 🌟 Start Latency Test for this specific row configuration
+            val hostPort = extractHostAndPort(config.value)
+            if (hostPort != null) {
+                tvLatency.text = "Checking..."
+                tvLatency.setTextColor(Color.GRAY)
+
+                measureLatency(hostPort.first, hostPort.second) { ms ->
+                    if (ms >= 0) {
+                        tvLatency.text = "$ms ms"
+                        // Color code your latency for visual appeal
+                        when {
+                            ms < 150 -> tvLatency.setTextColor(Color.parseColor("#4CAF50")) // Green
+                            ms < 300 -> tvLatency.setTextColor(Color.parseColor("#FF9800")) // Orange
+                            else -> tvLatency.setTextColor(Color.parseColor("#F44336"))     // Red
+                        }
+                    } else {
+                        tvLatency.text = "Timed out"
+                        tvLatency.setTextColor(Color.RED)
+                    }
+                }
+            } else {
+                tvLatency.text = "N/A"
+            }
 
             itemView.setOnClickListener {
                 selectedConfig = config
@@ -214,4 +263,39 @@ class MainActivity : ComponentActivity() {
             "Server"
         }
     }
+    // Helper function to extract host domain/IP and port from your VLESS config data structure
+    private fun extractHostAndPort(link: String): Pair<String, Int>? {
+        return try {
+            // Simple extraction fallback assuming standard URI format: vless://uuid@host:port
+            val clearPart = link.split("://").last()
+            val addressPart = clearPart.split("@").last().split("?").first().split("#").first()
+            val host = addressPart.split(":").first()
+            val port = addressPart.split(":").last().toInt()
+            Pair(host, port)
+        } catch (e: Exception) {
+            null
+        }
+    }
+
+    // Network execution utility measuring socket response times
+    private fun measureLatency(host: String, port: Int, callback: (Long) -> Unit) {
+        Thread {
+            val startTime = System.currentTimeMillis()
+            try {
+                val socket = java.net.Socket()
+                // Try to connect with a 2-second strict boundary timeout
+                socket.connect(java.net.InetSocketAddress(host, port), 2000)
+                socket.close()
+                val latency = System.currentTimeMillis() - startTime
+
+                // Post result back on the Main UI thread
+                runOnUiThread { callback(latency) }
+            } catch (e: Exception) {
+                runOnUiThread { callback(-1L) } // -1 indicates unreachable server
+            }
+        }.start()
+    }
+
+
+
 }
