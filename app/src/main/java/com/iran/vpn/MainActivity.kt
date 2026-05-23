@@ -6,9 +6,12 @@ import android.content.Intent
 import android.content.IntentFilter
 import android.graphics.Color
 import android.graphics.PorterDuff
+import android.net.TrafficStats
 import android.net.VpnService
 import android.os.Build
 import android.os.Bundle
+import android.os.Handler
+import android.os.Looper
 import android.widget.ImageButton
 import android.widget.ImageView
 import android.widget.LinearLayout
@@ -21,8 +24,14 @@ import androidx.activity.result.contract.ActivityResultContracts
 import androidx.core.graphics.toColorInt
 import androidx.core.view.GravityCompat
 import androidx.drawerlayout.widget.DrawerLayout
+import androidx.lifecycle.lifecycleScope
 import com.google.android.material.bottomsheet.BottomSheetDialog
 import com.google.android.material.navigation.NavigationView
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
+import java.net.InetSocketAddress
+import java.net.Socket
 
 class MainActivity : ComponentActivity() {
     private lateinit var btnPower: ImageButton
@@ -33,13 +42,23 @@ class MainActivity : ComponentActivity() {
     private lateinit var tvMainProtocol: TextView
     private lateinit var ivGlobe: ImageView
 
+    // Metrics Layout Views
+    private lateinit var tvDataUsage: TextView
+    private lateinit var tvVolumeStatus: TextView
+
     private var selectedConfig: VpnConfigResponse? = null
 
-    // Synchronize state changes triggered from notifications or network switches
+    // Asynchronous UI loop elements for live data counters
+    private val metricsHandler = Handler(Looper.getMainLooper())
+    private var metricsRunnable: Runnable? = null
+    private var initialTxBytes: Long = 0
+    private var initialRxBytes: Long = 0
+
     private val vpnStateReceiver = object : BroadcastReceiver() {
         override fun onReceive(context: Context?, intent: Intent?) {
             val isConnected = intent?.getBooleanExtra(iVpnService.EXTRA_STATE, false) ?: false
             updateUi(isConnected)
+            if (isConnected) startMetricsUpdates() else stopMetricsUpdates()
         }
     }
 
@@ -70,16 +89,16 @@ class MainActivity : ComponentActivity() {
         btnPower = findViewById(R.id.btnPower)
         tvStatus = findViewById(R.id.tvConnectStatus)
 
+        // Link metrics layouts under power button
+        tvDataUsage = findViewById(R.id.tvDataUsage)
+        tvVolumeStatus = findViewById(R.id.tvVolumeStatus)
+
         val protocolSelector = findViewById<RelativeLayout>(R.id.rlProtocolSelector)
         tvMainProtocol = findViewById(R.id.tvSelectedProtocol)
         ivGlobe = findViewById(R.id.ivGlobe)
 
         btnPower.setOnClickListener {
-            if (iVpnService.isRunning) {
-                stopVpn()
-            } else {
-                startVpn()
-            }
+            if (iVpnService.isRunning) stopVpn() else startVpn()
         }
 
         protocolSelector.setOnClickListener {
@@ -104,40 +123,103 @@ class MainActivity : ComponentActivity() {
             drawerLayout.closeDrawer(GravityCompat.START)
             true
         }
+
+        // Initialize user info from panel instantly on creation
+        fetchMarzbanSubscriptionData()
     }
 
     override fun onResume() {
         super.onResume()
-        // Instantly sync layout state with background service presence on reopen
-        updateUi(iVpnService.isRunning)
+        val running = iVpnService.isRunning
+        updateUi(running)
 
         val filter = IntentFilter(iVpnService.ACTION_VPN_STATE_CHANGED)
-
-        // 🌟 This single line replaces the entire if/else block,
-        // explicitly protects your app's broadcast, and clears the compiler error.
         registerReceiver(vpnStateReceiver, filter, RECEIVER_NOT_EXPORTED)
+
+        if (running) startMetricsUpdates() else stopMetricsUpdates()
     }
 
     override fun onPause() {
         super.onPause()
         unregisterReceiver(vpnStateReceiver)
+        stopMetricsUpdates()
     }
 
-    private fun performLogout() {
-        stopVpn()
-        SharedPrefsHelper.clearPrefs(this)
-        VpnDataManager.clearData()
+    // --- Live Data Usage Speed Tracking Logic ---
+    private fun startMetricsUpdates() {
+        // Record baseline values from system network interfaces
+        initialTxBytes = TrafficStats.getTotalTxBytes()
+        initialRxBytes = TrafficStats.getTotalRxBytes()
 
-        val intent = Intent(this, SigninActivity::class.java).apply {
-            flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TASK
+        metricsRunnable = object : Runnable {
+            override fun run() {
+                val currentTx = TrafficStats.getTotalTxBytes() - initialTxBytes
+                val currentRx = TrafficStats.getTotalRxBytes() - initialRxBytes
+
+                tvDataUsage.text = "Data Usage: ↑ ${formatBytes(currentTx)} | ↓ ${formatBytes(currentRx)}"
+
+                // Refresh data stats every 1 second
+                metricsHandler.postDelayed(this, 1000)
+            }
         }
-        startActivity(intent)
-        finish()
+        metricsHandler.post(metricsRunnable!!)
     }
 
+    private fun stopMetricsUpdates() {
+        metricsRunnable?.let { metricsHandler.removeCallbacks(it) }
+        tvDataUsage.text = "Data Usage: ↑ 0 KB | ↓ 0 KB"
+    }
+
+    private fun formatBytes(bytes: Long): String {
+        if (bytes < 1024) return "$bytes B"
+        val exp = (Math.log(bytes.toDouble()) / Math.log(1024.0)).toInt()
+        val units = arrayOf("KB", "MB", "GB", "TB")
+        return String.format("%.2f %s", bytes / Math.pow(1024.0, exp.toDouble()), units[exp - 1])
+    }
+
+    // --- Retrofit & Coroutines Intermediary Backend Sync Logic ---
+    private fun fetchMarzbanSubscriptionData() {
+        val activeConfig = selectedConfig ?: VpnDataManager.currentConfigs.firstOrNull() ?: return
+        val rawUri = activeConfig.value
+
+        // Extract the username attached to the end of the config hash (#username)
+        val username = try { rawUri.split("#").last() } catch(e: Exception) { "" }
+        if (username.isEmpty()) {
+            tvVolumeStatus.text = "Remaining Volume: N/A"
+            return
+        }
+
+        // Use standard non-blocking lifecycle coroutines instead of custom background worker threads
+        lifecycleScope.launch(Dispatchers.IO) {
+            try {
+                val response = RetrofitClient.instance.getVolumeStatus(username)
+
+                withContext(Dispatchers.Main) {
+                    if (response.isSuccessful && response.body() != null) {
+                        val volumeData = response.body()!!
+                        val dataLimit = volumeData.data_limit
+                        val remainingBytes = volumeData.remaining_bytes
+
+                        if (dataLimit == 0L) {
+                            tvVolumeStatus.text = "Remaining Volume: Unlimited"
+                        } else {
+                            tvVolumeStatus.text = "Remaining Volume: ${formatBytes(remainingBytes)}"
+                        }
+                    } else {
+                        tvVolumeStatus.text = "Remaining Volume: Account error"
+                    }
+                }
+            } catch (e: Exception) {
+                withContext(Dispatchers.Main) {
+                    tvVolumeStatus.text = "Remaining Volume: Couldn't sync"
+                }
+            }
+        }
+    }
+
+    // --- VPN Flow Actions ---
     private fun startVpn() {
         val config = selectedConfig ?: VpnDataManager.currentConfigs.firstOrNull()
-
         if (config == null) {
             Toast.makeText(this, "Please select a configuration first", Toast.LENGTH_SHORT).show()
             return
@@ -161,7 +243,6 @@ class MainActivity : ComponentActivity() {
 
     private fun askVpnPermission(vlessData: VlessConfig) {
         VpnDataManager.pendingConfig = vlessData
-
         val intent = VpnService.prepare(this)
         if (intent != null) {
             vpnPermissionLauncher.launch(intent)
@@ -189,10 +270,10 @@ class MainActivity : ComponentActivity() {
         }
     }
 
+    // --- Dynamic Server List View Sheet & Latency Pinging Check ---
     private fun showProtocolDialog() {
         val dialog = BottomSheetDialog(this, R.style.BottomSheetDialogTheme)
         val view = layoutInflater.inflate(R.layout.layout_protocol_list, null)
-
         val container = view.findViewById<LinearLayout>(R.id.containerProtocols)
         val configs = VpnDataManager.currentConfigs
 
@@ -205,7 +286,7 @@ class MainActivity : ComponentActivity() {
             val itemView = layoutInflater.inflate(R.layout.item_protocol_row, container, false)
             val tvName = itemView.findViewById<TextView>(R.id.tvProtocolName)
             val ivIcon = itemView.findViewById<ImageView>(R.id.ivProtocolIcon)
-            val tvLatency = itemView.findViewById<TextView>(R.id.tvProtocolLatency) // 🌟 Reference new View
+            val tvLatency = itemView.findViewById<TextView>(R.id.tvProtocolLatency)
 
             tvName.text = extractRemark(config.value)
 
@@ -217,16 +298,14 @@ class MainActivity : ComponentActivity() {
             }
             ivIcon.setImageResource(iconRes)
 
-            // 🌟 Start Latency Test for this specific row configuration
+            // Calculate and display Latency dynamically per protocol row item
             val hostPort = extractHostAndPort(config.value)
             if (hostPort != null) {
                 tvLatency.text = "Checking..."
                 tvLatency.setTextColor(Color.GRAY)
-
                 measureLatency(hostPort.first, hostPort.second) { ms ->
                     if (ms >= 0) {
                         tvLatency.text = "$ms ms"
-                        // Color code your latency for visual appeal
                         when {
                             ms < 150 -> tvLatency.setTextColor(Color.parseColor("#4CAF50")) // Green
                             ms < 300 -> tvLatency.setTextColor(Color.parseColor("#FF9800")) // Orange
@@ -245,12 +324,11 @@ class MainActivity : ComponentActivity() {
                 selectedConfig = config
                 tvMainProtocol.text = tvName.text
                 ivGlobe.setImageResource(iconRes)
+                fetchMarzbanSubscriptionData() // Sync newly selected profile data limit specs instantly
                 dialog.dismiss()
             }
-
             container.addView(itemView)
         }
-
         dialog.setContentView(view)
         dialog.show()
     }
@@ -263,10 +341,9 @@ class MainActivity : ComponentActivity() {
             "Server"
         }
     }
-    // Helper function to extract host domain/IP and port from your VLESS config data structure
+
     private fun extractHostAndPort(link: String): Pair<String, Int>? {
         return try {
-            // Simple extraction fallback assuming standard URI format: vless://uuid@host:port
             val clearPart = link.split("://").last()
             val addressPart = clearPart.split("@").last().split("?").first().split("#").first()
             val host = addressPart.split(":").first()
@@ -277,25 +354,29 @@ class MainActivity : ComponentActivity() {
         }
     }
 
-    // Network execution utility measuring socket response times
     private fun measureLatency(host: String, port: Int, callback: (Long) -> Unit) {
         Thread {
             val startTime = System.currentTimeMillis()
             try {
-                val socket = java.net.Socket()
-                // Try to connect with a 2-second strict boundary timeout
-                socket.connect(java.net.InetSocketAddress(host, port), 2000)
+                val socket = Socket()
+                socket.connect(InetSocketAddress(host, port), 2000)
                 socket.close()
                 val latency = System.currentTimeMillis() - startTime
-
-                // Post result back on the Main UI thread
                 runOnUiThread { callback(latency) }
             } catch (e: Exception) {
-                runOnUiThread { callback(-1L) } // -1 indicates unreachable server
+                runOnUiThread { callback(-1L) }
             }
         }.start()
     }
 
-
-
+    private fun performLogout() {
+        stopVpn()
+        SharedPrefsHelper.clearPrefs(this)
+        VpnDataManager.clearData()
+        val intent = Intent(this, SigninActivity::class.java).apply {
+            flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TASK
+        }
+        startActivity(intent)
+        finish()
+    }
 }
