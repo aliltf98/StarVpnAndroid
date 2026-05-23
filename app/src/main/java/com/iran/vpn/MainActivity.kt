@@ -48,7 +48,7 @@ class MainActivity : ComponentActivity() {
 
     private var selectedConfig: VpnConfigResponse? = null
 
-    // Asynchronous UI loop elements for live data counters
+    // Live Traffic Trackers
     private val metricsHandler = Handler(Looper.getMainLooper())
     private var metricsRunnable: Runnable? = null
     private var initialTxBytes: Long = 0
@@ -89,13 +89,15 @@ class MainActivity : ComponentActivity() {
         btnPower = findViewById(R.id.btnPower)
         tvStatus = findViewById(R.id.tvConnectStatus)
 
-        // Link metrics layouts under power button
         tvDataUsage = findViewById(R.id.tvDataUsage)
         tvVolumeStatus = findViewById(R.id.tvVolumeStatus)
 
         val protocolSelector = findViewById<RelativeLayout>(R.id.rlProtocolSelector)
         tvMainProtocol = findViewById(R.id.tvSelectedProtocol)
         ivGlobe = findViewById(R.id.ivGlobe)
+
+        // 🌟 LOAD DATA IMMEDIATELY: Read cached metrics bundled from login response
+        loadCachedSubscriptionData()
 
         btnPower.setOnClickListener {
             if (iVpnService.isRunning) stopVpn() else startVpn()
@@ -123,9 +125,6 @@ class MainActivity : ComponentActivity() {
             drawerLayout.closeDrawer(GravityCompat.START)
             true
         }
-
-        // Initialize user info from panel instantly on creation
-        fetchMarzbanSubscriptionData()
     }
 
     override fun onResume() {
@@ -145,9 +144,20 @@ class MainActivity : ComponentActivity() {
         stopMetricsUpdates()
     }
 
-    // --- Live Data Usage Speed Tracking Logic ---
+    // --- Load metrics saved during Login ---
+    private fun loadCachedSubscriptionData() {
+        val dataLimit = SharedPrefsHelper.getLong(this, "data_limit", 0L)
+        val remainingBytes = SharedPrefsHelper.getLong(this, "remaining_bytes", 0L)
+
+        if (dataLimit == 0L) {
+            tvVolumeStatus.text = "Remaining Volume: Unlimited"
+        } else {
+            tvVolumeStatus.text = "Remaining Volume: ${formatBytes(remainingBytes)}"
+        }
+    }
+
+    // --- Live Throughput Traffic Counters ---
     private fun startMetricsUpdates() {
-        // Record baseline values from system network interfaces
         initialTxBytes = TrafficStats.getTotalTxBytes()
         initialRxBytes = TrafficStats.getTotalRxBytes()
 
@@ -157,8 +167,6 @@ class MainActivity : ComponentActivity() {
                 val currentRx = TrafficStats.getTotalRxBytes() - initialRxBytes
 
                 tvDataUsage.text = "Data Usage: ↑ ${formatBytes(currentTx)} | ↓ ${formatBytes(currentRx)}"
-
-                // Refresh data stats every 1 second
                 metricsHandler.postDelayed(this, 1000)
             }
         }
@@ -177,19 +185,17 @@ class MainActivity : ComponentActivity() {
         return String.format("%.2f %s", bytes / Math.pow(1024.0, exp.toDouble()), units[exp - 1])
     }
 
-    // --- Retrofit & Coroutines Intermediary Backend Sync Logic ---
+    // --- Async Refreshing Layer via Retrofit Client API call ---
     private fun fetchMarzbanSubscriptionData() {
         val activeConfig = selectedConfig ?: VpnDataManager.currentConfigs.firstOrNull() ?: return
         val rawUri = activeConfig.value
 
-        // Extract the username attached to the end of the config hash (#username)
         val username = try { rawUri.split("#").last() } catch(e: Exception) { "" }
         if (username.isEmpty()) {
             tvVolumeStatus.text = "Remaining Volume: N/A"
             return
         }
 
-        // Use standard non-blocking lifecycle coroutines instead of custom background worker threads
         lifecycleScope.launch(Dispatchers.IO) {
             try {
                 val response = RetrofitClient.instance.getVolumeStatus(username)
@@ -200,24 +206,25 @@ class MainActivity : ComponentActivity() {
                         val dataLimit = volumeData.data_limit
                         val remainingBytes = volumeData.remaining_bytes
 
+                        // Update layout views dynamically
                         if (dataLimit == 0L) {
                             tvVolumeStatus.text = "Remaining Volume: Unlimited"
                         } else {
                             tvVolumeStatus.text = "Remaining Volume: ${formatBytes(remainingBytes)}"
                         }
-                    } else {
-                        tvVolumeStatus.text = "Remaining Volume: Account error"
+
+                        // Keep local app storage limits synced with current dashboard stats
+                        SharedPrefsHelper.saveLong(this@MainActivity, "data_limit", dataLimit)
+                        SharedPrefsHelper.saveLong(this@MainActivity, "remaining_bytes", remainingBytes)
                     }
                 }
             } catch (e: Exception) {
-                withContext(Dispatchers.Main) {
-                    tvVolumeStatus.text = "Remaining Volume: Couldn't sync"
-                }
+                // Keep displaying previous values safely if network timeout triggers
             }
         }
     }
 
-    // --- VPN Flow Actions ---
+    // --- Service Lifecycles ---
     private fun startVpn() {
         val config = selectedConfig ?: VpnDataManager.currentConfigs.firstOrNull()
         if (config == null) {
@@ -270,7 +277,7 @@ class MainActivity : ComponentActivity() {
         }
     }
 
-    // --- Dynamic Server List View Sheet & Latency Pinging Check ---
+    // --- Row Dialog Pinging calculations ---
     private fun showProtocolDialog() {
         val dialog = BottomSheetDialog(this, R.style.BottomSheetDialogTheme)
         val view = layoutInflater.inflate(R.layout.layout_protocol_list, null)
@@ -298,7 +305,6 @@ class MainActivity : ComponentActivity() {
             }
             ivIcon.setImageResource(iconRes)
 
-            // Calculate and display Latency dynamically per protocol row item
             val hostPort = extractHostAndPort(config.value)
             if (hostPort != null) {
                 tvLatency.text = "Checking..."
@@ -307,9 +313,9 @@ class MainActivity : ComponentActivity() {
                     if (ms >= 0) {
                         tvLatency.text = "$ms ms"
                         when {
-                            ms < 150 -> tvLatency.setTextColor(Color.parseColor("#4CAF50")) // Green
-                            ms < 300 -> tvLatency.setTextColor(Color.parseColor("#FF9800")) // Orange
-                            else -> tvLatency.setTextColor(Color.parseColor("#F44336"))     // Red
+                            ms < 150 -> tvLatency.setTextColor(Color.parseColor("#4CAF50"))
+                            ms < 300 -> tvLatency.setTextColor(Color.parseColor("#FF9800"))
+                            else -> tvLatency.setTextColor(Color.parseColor("#F44336"))
                         }
                     } else {
                         tvLatency.text = "Timed out"
@@ -324,7 +330,7 @@ class MainActivity : ComponentActivity() {
                 selectedConfig = config
                 tvMainProtocol.text = tvName.text
                 ivGlobe.setImageResource(iconRes)
-                fetchMarzbanSubscriptionData() // Sync newly selected profile data limit specs instantly
+                fetchMarzbanSubscriptionData() // Sync selected proxy metrics manually on change
                 dialog.dismiss()
             }
             container.addView(itemView)
