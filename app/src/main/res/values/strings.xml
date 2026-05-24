@@ -1,3 +1,5 @@
 <resources>
-    <string name="app_name">iranVPN</string>
+    <string name="app_name">Star VPN</string>
+    <string name="status_connected">Connected</string>
+    <string name="status_connect_now">Connect Now</string>
 </resources>

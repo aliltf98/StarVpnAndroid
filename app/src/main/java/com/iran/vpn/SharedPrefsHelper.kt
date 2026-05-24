@@ -41,4 +41,20 @@ object SharedPrefsHelper {
         val type = object : TypeToken<List<VpnConfigResponse>>() {}.type
         return Gson().fromJson(json, type)
     }
+    // 🌟 Added to support long values for account bandwidth metrics
+    fun saveLong(context: Context, key: String, value: Long) {
+        getPrefs(context).edit().putLong(key, value).apply()
+    }
+
+    fun getLong(context: Context, key: String, defaultValue: Long = 0L): Long {
+        return getPrefs(context).getLong(key, defaultValue)
+    }
+    // 🌟 Add these to SharedPrefsHelper.kt
+    fun saveString(context: Context, key: String, value: String) {
+        getPrefs(context).edit().putString(key, value).apply()
+    }
+
+    fun getString(context: Context, key: String, defaultValue: String = ""): String {
+        return getPrefs(context).getString(key, defaultValue) ?: defaultValue
+    }
 }

@@ -13,39 +13,22 @@ import androidx.activity.ComponentActivity
 import androidx.lifecycle.lifecycleScope
 import kotlinx.coroutines.launch
 
-
 class SigninActivity : ComponentActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        setContentView(R.layout.activity_signin) // وصل شدن به همان XML مرحله ۱
-//        val btnGoToSignup = findViewById<Button>(R.id.btnSwitch) // همان دکمه شفاف پایین
-
-//        btnGoToSignup.setOnClickListener {
-//            val intent = Intent(this, RegisterActivity::class.java)
-//            startActivity(intent)
-//            finish()
-//        }
-        val manufacturer = android.os.Build.MANUFACTURER // مثال: Samsung
-        val model = android.os.Build.MODEL               // مثال: SM-G991B (همان S21)
-        val deviceName = "$manufacturer $model"         // خروجی: Samsung SM-G991B
+        setContentView(R.layout.activity_signin)
 
         val btnSubmit = findViewById<Button>(R.id.btnSubmit)
         val loading = findViewById<ProgressBar>(R.id.loadingCircle)
-        btnSubmit.setOnClickListener {
 
-            // ۱. نمایش لودینگ و غیرفعال کردن دکمه
+        btnSubmit.setOnClickListener {
             loading.visibility = View.VISIBLE
             btnSubmit.isEnabled = false
-
             performLogin()
-
-            // ۲. ارسال اطلاعات به جنگو (این بخش اصلی است)
-            // ما از یک Coroutine استفاده می‌کنیم چون نباید اینترنت باعث هنگ کردن برنامه شود
-
         }
-
     }
+
     @SuppressLint("HardwareIds")
     private fun performLogin() {
         val btnSubmit = findViewById<Button>(R.id.btnSubmit)
@@ -53,8 +36,8 @@ class SigninActivity : ComponentActivity() {
         val username = findViewById<EditText>(R.id.Username).text.toString()
         val password = findViewById<EditText>(R.id.Password).text.toString()
 
-        // ۱. استخراج اطلاعات گوشی
-        val androidId = android.provider.Settings.Secure.getString(contentResolver,android.provider.Settings.Secure.ANDROID_ID)
+        // Extract device information safely
+        val androidId = android.provider.Settings.Secure.getString(contentResolver, android.provider.Settings.Secure.ANDROID_ID)
         val modelName = "${android.os.Build.MANUFACTURER} ${android.os.Build.MODEL}"
 
         val loginRequest = SigninRequest(
@@ -67,18 +50,24 @@ class SigninActivity : ComponentActivity() {
         lifecycleScope.launch {
             try {
                 val response = RetrofitClient.instance.loginUser(loginRequest)
-                if (response.isSuccessful) {
-                    val authData = response.body()
 
-                    // ۲. ذخیره توکن در حافظه موقت یا SharedPrefs
-                    SharedPrefsHelper.saveToken(this@SigninActivity, authData?.token)
+                // 🌟 Smart Null-Safety check fixes "Assignment type mismatch"
+                // Inside your SigninActivity lifecycleScope launch block:
+                if (response.isSuccessful && response.body() != null) {
+                    val authData = response.body()!!
+                    // Save token securely
+                    SharedPrefsHelper.saveToken(this@SigninActivity, authData.token)
 
-                    // ۳. مدیریت کانفیگ‌ها (بدون نیاز به دیتابیس)
-                    authData?.configs?.let { configs ->
-                        // این لیست را به MainActivity بفرستید یا در یک Object سراسری ذخیره کنید
-                        VpnDataManager.currentConfigs = configs
-                        SharedPrefsHelper.saveConfigs(this@SigninActivity, configs) // ذخیره دائمی
-                    }
+                    // 🌟 Save the clear username using your updated helper
+                    SharedPrefsHelper.saveString(this@SigninActivity, "auth_username", authData.username)
+
+                    val configs = authData.configs
+                    VpnDataManager.currentConfigs = configs
+                    SharedPrefsHelper.saveConfigs(this@SigninActivity, configs)
+
+                    // 🌟 Updated to match camelCase parameters from data.kt
+                    SharedPrefsHelper.saveLong(this@SigninActivity, "data_limit", authData.dataLimit)
+                    SharedPrefsHelper.saveLong(this@SigninActivity, "remaining_bytes", authData.remainingBytes)
 
                     startActivity(Intent(this@SigninActivity, MainActivity::class.java))
                     finish()
@@ -87,6 +76,7 @@ class SigninActivity : ComponentActivity() {
                 }
             } catch (e: Exception) {
                 Log.e("Login", "Error: ${e.message}")
+                Toast.makeText(this@SigninActivity, "خطا در اتصال به سرور", Toast.LENGTH_SHORT).show()
             } finally {
                 loading.visibility = View.GONE
                 btnSubmit.isEnabled = true

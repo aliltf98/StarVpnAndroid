@@ -1,4 +1,5 @@
 package com.iran.vpn
+import com.google.gson.annotations.SerializedName
 
 data class SignupRequest(
     val username: String,
@@ -23,8 +24,15 @@ data class VpnConfigResponse(
 
 // اصلاح پاسخ لاگین برای دریافت لیست کانفیگ‌ها
 data class AuthResponse(
-    val token: String?,
-    val message: String?,
-    val configs: List<VpnConfigResponse>? // لیست کانفیگ‌ها اینجا دریافت می‌شود
+    val token: String,
+    val username: String,
+    val message: String,
+    val configs: List<VpnConfigResponse>,
+
+    @SerializedName("data_limit")
+    val dataLimit: Long,
+
+    @SerializedName("remaining_bytes")
+    val remainingBytes: Long
 )
 

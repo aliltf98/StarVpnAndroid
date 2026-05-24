@@ -2,9 +2,12 @@ package com.iran.vpn
 
 import android.net.Uri
 
+import java.io.Serializable
+
 interface ProxyConfig {
     fun generateXrayJson(tunFd: Int): String
 }
+
 
 data class VlessConfig(
     val remark: String,
@@ -15,7 +18,7 @@ data class VlessConfig(
     val network: String,
     val path: String,
     val host: String
-) : ProxyConfig {
+) : ProxyConfig, Serializable  {
 
     override fun generateXrayJson(tunFd: Int): String {
         val tlsConfig = if (security == "tls") {

@@ -45,20 +45,37 @@ class MainActivity : ComponentActivity() {
     // Metrics Layout Views
     private lateinit var tvDataUsage: TextView
     private lateinit var tvVolumeStatus: TextView
+    private lateinit var btnReloadUsage: ImageButton
 
     private var selectedConfig: VpnConfigResponse? = null
 
     // Live Traffic Trackers
     private val metricsHandler = Handler(Looper.getMainLooper())
     private var metricsRunnable: Runnable? = null
+
+    // 🌟 These now persist across app pauses/resumes to maintain session history
     private var initialTxBytes: Long = 0
     private var initialRxBytes: Long = 0
+    private var isTrackingSession: Boolean = false
 
     private val vpnStateReceiver = object : BroadcastReceiver() {
         override fun onReceive(context: Context?, intent: Intent?) {
             val isConnected = intent?.getBooleanExtra(iVpnService.EXTRA_STATE, false) ?: false
             updateUi(isConnected)
-            if (isConnected) startMetricsUpdates() else stopMetricsUpdates()
+
+            if (isConnected) {
+                // 🌟 ONLY capture the baseline once when the connection first registers as true
+                if (!isTrackingSession) {
+                    initialTxBytes = TrafficStats.getTotalTxBytes()
+                    initialRxBytes = TrafficStats.getTotalRxBytes()
+                    isTrackingSession = true
+                }
+                startMetricsUpdates()
+            } else {
+                // 🌟 Reset trackers to zero on true disconnection
+                isTrackingSession = false
+                stopMetricsUpdates()
+            }
         }
     }
 
@@ -91,17 +108,22 @@ class MainActivity : ComponentActivity() {
 
         tvDataUsage = findViewById(R.id.tvDataUsage)
         tvVolumeStatus = findViewById(R.id.tvVolumeStatus)
+//        btnReloadUsage = findViewById(R.id.btnReloadUsage)
 
         val protocolSelector = findViewById<RelativeLayout>(R.id.rlProtocolSelector)
         tvMainProtocol = findViewById(R.id.tvSelectedProtocol)
         ivGlobe = findViewById(R.id.ivGlobe)
 
-        // 🌟 LOAD DATA IMMEDIATELY: Read cached metrics bundled from login response
         loadCachedSubscriptionData()
 
         btnPower.setOnClickListener {
             if (iVpnService.isRunning) stopVpn() else startVpn()
         }
+
+//        btnReloadUsage.setOnClickListener {
+//            Toast.makeText(this, "بروزرسانی حجم مصرفی...", Toast.LENGTH_SHORT).show()
+//            fetchMarzbanSubscriptionData()
+//        }
 
         protocolSelector.setOnClickListener {
             if (iVpnService.isRunning) {
@@ -135,16 +157,28 @@ class MainActivity : ComponentActivity() {
         val filter = IntentFilter(iVpnService.ACTION_VPN_STATE_CHANGED)
         registerReceiver(vpnStateReceiver, filter, RECEIVER_NOT_EXPORTED)
 
-        if (running) startMetricsUpdates() else stopMetricsUpdates()
+        if (running) {
+            // If it was already running when the app opened, align our flag state
+            if (!isTrackingSession) {
+                initialTxBytes = TrafficStats.getTotalTxBytes()
+                initialRxBytes = TrafficStats.getTotalRxBytes()
+                isTrackingSession = true
+            }
+            startMetricsUpdates()
+        } else {
+            stopMetricsUpdates()
+        }
+
+        fetchMarzbanSubscriptionData()
     }
 
     override fun onPause() {
         super.onPause()
         unregisterReceiver(vpnStateReceiver)
-        stopMetricsUpdates()
+        // Stop the UI looper handler to save battery, but leave the byte counts intact!
+        metricsRunnable?.let { metricsHandler.removeCallbacks(it) }
     }
 
-    // --- Load metrics saved during Login ---
     private fun loadCachedSubscriptionData() {
         val dataLimit = SharedPrefsHelper.getLong(this, "data_limit", 0L)
         val remainingBytes = SharedPrefsHelper.getLong(this, "remaining_bytes", 0L)
@@ -158,15 +192,19 @@ class MainActivity : ComponentActivity() {
 
     // --- Live Throughput Traffic Counters ---
     private fun startMetricsUpdates() {
-        initialTxBytes = TrafficStats.getTotalTxBytes()
-        initialRxBytes = TrafficStats.getTotalRxBytes()
+        // Remove any existing loops to prevent double scheduling spikes
+        metricsRunnable?.let { metricsHandler.removeCallbacks(it) }
 
         metricsRunnable = object : Runnable {
             override fun run() {
                 val currentTx = TrafficStats.getTotalTxBytes() - initialTxBytes
                 val currentRx = TrafficStats.getTotalRxBytes() - initialRxBytes
 
-                tvDataUsage.text = "Data Usage: ↑ ${formatBytes(currentTx)} | ↓ ${formatBytes(currentRx)}"
+                // Keep metrics normalized to 0 if system counters slightly fluctuate below baseline
+                val displayTx = if (currentTx > 0) currentTx else 0L
+                val displayRx = if (currentRx > 0) currentRx else 0L
+
+                tvDataUsage.text = "Data Usage: ↑ ${formatBytes(displayTx)} | ↓ ${formatBytes(displayRx)}"
                 metricsHandler.postDelayed(this, 1000)
             }
         }
@@ -185,12 +223,9 @@ class MainActivity : ComponentActivity() {
         return String.format("%.2f %s", bytes / Math.pow(1024.0, exp.toDouble()), units[exp - 1])
     }
 
-    // --- Async Refreshing Layer via Retrofit Client API call ---
+    // --- Dynamic Network Synchronization API Sync ---
     private fun fetchMarzbanSubscriptionData() {
-        val activeConfig = selectedConfig ?: VpnDataManager.currentConfigs.firstOrNull() ?: return
-        val rawUri = activeConfig.value
-
-        val username = try { rawUri.split("#").last() } catch(e: Exception) { "" }
+        val username = SharedPrefsHelper.getString(this, "auth_username", "")
         if (username.isEmpty()) {
             tvVolumeStatus.text = "Remaining Volume: N/A"
             return
@@ -206,25 +241,22 @@ class MainActivity : ComponentActivity() {
                         val dataLimit = volumeData.data_limit
                         val remainingBytes = volumeData.remaining_bytes
 
-                        // Update layout views dynamically
                         if (dataLimit == 0L) {
                             tvVolumeStatus.text = "Remaining Volume: Unlimited"
                         } else {
                             tvVolumeStatus.text = "Remaining Volume: ${formatBytes(remainingBytes)}"
                         }
 
-                        // Keep local app storage limits synced with current dashboard stats
                         SharedPrefsHelper.saveLong(this@MainActivity, "data_limit", dataLimit)
                         SharedPrefsHelper.saveLong(this@MainActivity, "remaining_bytes", remainingBytes)
                     }
                 }
             } catch (e: Exception) {
-                // Keep displaying previous values safely if network timeout triggers
+                // Keep values stable if signal fades out
             }
         }
     }
 
-    // --- Service Lifecycles ---
     private fun startVpn() {
         val config = selectedConfig ?: VpnDataManager.currentConfigs.firstOrNull()
         if (config == null) {
@@ -277,7 +309,6 @@ class MainActivity : ComponentActivity() {
         }
     }
 
-    // --- Row Dialog Pinging calculations ---
     private fun showProtocolDialog() {
         val dialog = BottomSheetDialog(this, R.style.BottomSheetDialogTheme)
         val view = layoutInflater.inflate(R.layout.layout_protocol_list, null)
@@ -330,7 +361,7 @@ class MainActivity : ComponentActivity() {
                 selectedConfig = config
                 tvMainProtocol.text = tvName.text
                 ivGlobe.setImageResource(iconRes)
-                fetchMarzbanSubscriptionData() // Sync selected proxy metrics manually on change
+                fetchMarzbanSubscriptionData()
                 dialog.dismiss()
             }
             container.addView(itemView)

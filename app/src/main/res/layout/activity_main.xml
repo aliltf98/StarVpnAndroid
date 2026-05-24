@@ -82,17 +82,34 @@
             android:textColor="#000000"
             android:textSize="16sp"
             android:textStyle="bold" />
-        <TextView
-            android:id="@+id/tvVolumeStatus"
-            android:layout_width="wrap_content"
+
+        <LinearLayout
+            android:id="@+id/llVpnMetrics"
+            android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:layout_below="@id/tvConnectStatus"
             android:layout_centerHorizontal="true"
-            android:layout_marginTop="15dp"
-            android:text=""
-            android:textColor="#000000"
-            android:textSize="16sp"
-            android:textStyle="bold" />
+            android:layout_marginTop="12dp"
+            android:gravity="center"
+            android:orientation="vertical">
+
+            <TextView
+                android:id="@+id/tvDataUsage"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="Data Usage: ↑ 0 KB | ↓ 0 KB"
+                android:textColor="#666666"
+                android:textSize="13sp" />
+
+            <TextView
+                android:id="@+id/tvVolumeStatus"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="4dp"
+                android:text="Remaining Volume: Checking..."
+                android:textColor="#666666"
+                android:textSize="13sp" />
+        </LinearLayout>
 
         <LinearLayout
             android:layout_width="match_parent"
@@ -130,7 +147,7 @@
                     android:layout_toEndOf="@id/ivGlobe"
                     android:layout_centerVertical="true"
                     android:layout_marginStart="15dp"
-                    android:text="openVPN"
+                    android:text="auto"
                     android:textColor="#333333"
                     android:textSize="18sp" />
 

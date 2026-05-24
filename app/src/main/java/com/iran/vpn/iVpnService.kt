@@ -1,60 +1,59 @@
 package com.iran.vpn
 
+import android.app.Notification
 import android.app.NotificationChannel
 import android.app.NotificationManager
 import android.app.PendingIntent
+import android.content.Context
 import android.content.Intent
-import android.content.pm.ServiceInfo
 import android.net.VpnService
 import android.os.Build
 import android.os.ParcelFileDescriptor
 import android.util.Log
 import androidx.core.app.NotificationCompat
 
-private const val CHANNEL_ID = "vpn_service_channel"
-
 class iVpnService : VpnService() {
 
     private var vpnInterface: ParcelFileDescriptor? = null
 
-    private fun createNotificationChannel() {
-        val serviceChannel = NotificationChannel(
-            CHANNEL_ID, "VPN Service Channel", NotificationManager.IMPORTANCE_DEFAULT
-        )
-        getSystemService(NotificationManager::class.java).createNotificationChannel(serviceChannel)
+    companion object {
+        var isRunning: Boolean = false
+            private set
+
+        const val ACTION_VPN_STATE_CHANGED = "com.iran.vpn.ACTION_VPN_STATE_CHANGED"
+        const val EXTRA_STATE = "vpn_state"
+
+        const val ACTION_START_VPN = "com.iran.vpn.START"
+        const val ACTION_STOP_VPN = "com.iran.vpn.STOP"
+
+        private const val NOTIFICATION_ID = 4125
+        private const val CHANNEL_ID = "vpn_service_channel"
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
-        createNotificationChannel()
+        val action = intent?.action
 
-        val pendingIntent = PendingIntent.getActivity(
-            this, 0, Intent(this, MainActivity::class.java), PendingIntent.FLAG_IMMUTABLE
-        )
-
-        val notification = NotificationCompat.Builder(this, CHANNEL_ID)
-            .setContentTitle("IranVPN Active")
-            .setContentText("Secure connection established...")
-            .setSmallIcon(android.R.drawable.ic_dialog_info)
-            .setContentIntent(pendingIntent)
-            .build()
-
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
-            startForeground(1, notification, ServiceInfo.FOREGROUND_SERVICE_TYPE_SPECIAL_USE)
-        } else {
-            startForeground(1, notification)
-        }
-
-        val config = VpnDataManager.pendingConfig
-        if (config == null) {
-            Log.e("VpnService", "No pending config found, stopping service.")
-            stopSelf()
+        if (action == ACTION_STOP_VPN) {
+            stopVpnService()
             return START_NOT_STICKY
         }
 
-        setupVpnAndStart(config)
+        if (action == ACTION_START_VPN) {
+            val config = VpnDataManager.pendingConfig
+            if (config != null) {
+                isRunning = true
+                broadcastState(true)
+
+                startForeground(NOTIFICATION_ID, createNotification())
+                setupVpnAndStart(config)
+            } else {
+                Log.e("iVpnService", "Failed to start: VlessConfig is null")
+                stopSelf()
+            }
+        }
+
         return START_STICKY
     }
-// Inside iVpnService.kt -> Change the setupVpnAndStart method to look like this:
 
     private fun setupVpnAndStart(config: VlessConfig) {
         try {
@@ -70,30 +69,96 @@ class iVpnService : VpnService() {
                 .addDisallowedApplication(packageName)
                 .establish()
 
-            val pfd = vpnInterface ?: return
+            val pfd = vpnInterface ?: run {
+                Log.e("iVpnService", "TUN interface creation failed")
+                stopVpnService()
+                return
+            }
 
-            Log.d("VpnService", "TUN interface established, fd=${pfd.fd}")
-
+            Log.d("iVpnService", "TUN established on fd=${pfd.fd}")
             EngineManager.startEngine(this, config, pfd.fd)
-            val fd = pfd.fd
-            Log.d("VpnService", "TUN interface established, fd=$fd")
-
-            // Crucial Change: Pass the context, config, and the actual fd integer
 
         } catch (e: Exception) {
-            Log.e("VpnService", "Setup VPN failed: ${e.message}")
-            stopSelf()
+            Log.e("iVpnService", "VPN pipeline routing failed: ${e.message}")
+            stopVpnService()
         }
     }
-    override fun onDestroy() {
-        EngineManager.stopAll()
+
+    private fun stopVpnService() {
+        Log.d("iVpnService", "Tearing down connections...")
         try {
+            EngineManager.stopAll()
+
             vpnInterface?.close()
             vpnInterface = null
+
+            isRunning = false
+            VpnDataManager.pendingConfig = null
+            broadcastState(false)
+
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) {
+                stopForeground(STOP_FOREGROUND_REMOVE)
+            } else {
+                @Suppress("DEPRECATION")
+                stopForeground(true)
+            }
+            stopSelf()
+
         } catch (e: Exception) {
-            Log.e("VpnService", "Error closing interface: ${e.message}")
+            Log.e("iVpnService", "Error during cleanup execution: ${e.message}")
         }
+    }
+
+    private fun broadcastState(connected: Boolean) {
+        val intent = Intent(ACTION_VPN_STATE_CHANGED).apply {
+            putExtra(EXTRA_STATE, connected)
+            setPackage(packageName)
+        }
+        sendBroadcast(intent)
+    }
+
+    private fun createNotification(): Notification {
+        val manager = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            val channel = NotificationChannel(
+                CHANNEL_ID,
+                "VPN Connection",
+                NotificationManager.IMPORTANCE_LOW
+            )
+            manager.createNotificationChannel(channel)
+        }
+
+        val openAppIntent = Intent(this, MainActivity::class.java)
+        val openAppPendingIntent = PendingIntent.getActivity(
+            this, 0, openAppIntent,
+            PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT
+        )
+
+        val stopIntent = Intent(this, iVpnService::class.java).apply {
+            action = ACTION_STOP_VPN
+        }
+        val stopPendingIntent = PendingIntent.getService(
+            this, 1, stopIntent,
+            PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT
+        )
+
+        return NotificationCompat.Builder(this, CHANNEL_ID)
+            .setContentTitle("Star VPN")
+            .setContentText("Protected connection active")
+            .setSmallIcon(android.R.drawable.ic_menu_share)
+            .setContentIntent(openAppPendingIntent)
+            .setOngoing(true)
+            .addAction(android.R.drawable.ic_menu_close_clear_cancel, "Disconnect", stopPendingIntent)
+            .build()
+    }
+
+    override fun onRevoke() {
+        stopVpnService()
+        super.onRevoke()
+    }
+
+    override fun onDestroy() {
+        stopVpnService()
         super.onDestroy()
-        Log.d("VpnService", "VPN Service destroyed.")
     }
 }
